@@ -25,7 +25,8 @@ import static by.clevertec.serialization.utils.ClassTypeName.CHAR_W;
 public class Deserializer extends AbstractMapper implements JsonInitialize {
 
     public <T> T mapJsonToObject(String sourceJson, Class<T> classType)
-            throws InvocationTargetException, InstantiationException, IllegalAccessException, NoSuchMethodException, NoSuchFieldException {
+            throws InvocationTargetException, InstantiationException, IllegalAccessException, NoSuchMethodException,
+            NoSuchFieldException {
 
         if (isWrapperOrPrimitive(classType)) {
             return (T) mapPrimitiveToWrapper(sourceJson, classType);
@@ -42,29 +43,21 @@ public class Deserializer extends AbstractMapper implements JsonInitialize {
             String setterName = "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
             Method setter = classType.getMethod(setterName, fieldType);
 
-            if (isWrapperOrPrimitive(fieldType)) {
-                initializeWrapperOrPrimitive(fieldType, sourceJson, fieldName, instance, setter);
-            } else {
-                if (isCollection(fieldType)) {
-                    initializeCollection(sourceJson, fieldName, instance, setter);
-                } else {
-                    if (isMap(fieldType)) {
-                        initializeMap(sourceJson, fieldName, setter, instance, classType);
-                    } else {
-                        if (isIntegratedClassObject(fieldType.getPackageName())) {
-                            initializeIntegratedClassObject(fieldType, sourceJson, fieldName, instance, setter);
-                        } else {
-                            String providedJson = getProvidedJson(sourceJson, fieldName);
-                            setter.invoke(instance, mapJsonToObject(providedJson, fieldType));
-                        }
-                    }
-                }
-            }
+            initField(fieldType, sourceJson, fieldName, instance, setter, classType);
             sourceJson = trimJson(sourceJson, fieldName);
         }
         return instance;
     }
 
+    private void initField(Class<?> fieldType, String sourceJson, String fieldName, Object instance,
+                           Method setter, Class<?> classType) throws InvocationTargetException, IllegalAccessException,
+            NoSuchFieldException, InstantiationException, NoSuchMethodException {
+        if (isWrapperOrPrimitive(fieldType)) {
+            initializeWrapperOrPrimitive(fieldType, sourceJson, fieldName, instance, setter);
+        } else {
+            initializeCollection(fieldType, sourceJson, fieldName, instance, setter, classType);
+        }
+    }
 
     public void initializeWrapperOrPrimitive(Class<?> fieldType, String sourceJson, String fieldName, Object instance,
                                              Method setter)
@@ -94,51 +87,64 @@ public class Deserializer extends AbstractMapper implements JsonInitialize {
         }
     }
 
-    public void initializeCollection(String sourceJson, String fieldName, Object instance,
-                                     Method setter) {
-        Class<?> parameter = (Class<?>) ((ParameterizedType) setter
-                .getGenericParameterTypes()[0])
-                .getActualTypeArguments()[0];
-        if (isWrapperOrPrimitive(parameter)) {
-            try {
-                initializeListFieldThatNumbers(sourceJson, fieldName, setter, instance, parameter);
-            } catch (InvocationTargetException | IllegalAccessException e) {
-                e.printStackTrace();
+
+    public void initializeCollection(Class<?> fieldType, String sourceJson, String fieldName, Object instance,
+                                     Method setter, Class<?> classType) throws NoSuchFieldException,
+            InvocationTargetException, InstantiationException, IllegalAccessException, NoSuchMethodException {
+        if (isCollection(fieldType)) {
+            Class<?> parameter = (Class<?>) ((ParameterizedType) setter
+                    .getGenericParameterTypes()[0])
+                    .getActualTypeArguments()[0];
+            if (isWrapperOrPrimitive(parameter)) {
+                try {
+                    initializeListFieldThatNumbers(sourceJson, fieldName, setter, instance, parameter);
+                } catch (InvocationTargetException | IllegalAccessException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                try {
+                    initializeListFieldThatObjects(sourceJson, fieldName, setter, instance, parameter);
+                } catch (InvocationTargetException
+                        | IllegalAccessException | NoSuchFieldException
+                        | InstantiationException | NoSuchMethodException e) {
+                    e.printStackTrace();
+                }
             }
         } else {
-            try {
-                initializeListFieldThatObjects(sourceJson, fieldName, setter, instance, parameter);
-            } catch (InvocationTargetException
-                    | IllegalAccessException | NoSuchFieldException
-                    | InstantiationException | NoSuchMethodException e) {
-                e.printStackTrace();
-            }
+            initializeMap(fieldType, sourceJson, fieldName, setter, instance, classType);
         }
+
     }
 
     public void initializeIntegratedClassObject(Class<?> fieldType, String sourceJson, String fieldName, Object instance,
+                                                Method setter) throws InvocationTargetException, IllegalAccessException,
+            NoSuchFieldException, InstantiationException, NoSuchMethodException {
+        if (isIntegratedClassObject(fieldType.getPackageName())) {
+            String value;
+            if (fieldType.equals(UUID.class)) {
+                value = getUuidValue(sourceJson, fieldName);
+                if (value == null) {
 
-                                                Method setter) throws InvocationTargetException, IllegalAccessException {
-        String value;
-        if (fieldType.equals(UUID.class)) {
-            value = getUuidValue(sourceJson, fieldName);
-            if (value == null) {
-
-                setter.invoke(instance, (Object) null);
+                    setter.invoke(instance, (Object) null);
+                } else {
+                    setter.invoke(instance, UUID.fromString(value));
+                }
             } else {
-                setter.invoke(instance, UUID.fromString(value));
+                if (fieldType.equals(LocalDate.class)) {
+                    initializeLocalDateField(setter, instance, sourceJson, fieldName);
+                } else {
+                    value = getStringValue(sourceJson, fieldName);
+                    setter.invoke(instance, value);
+                }
             }
         } else {
-            if (fieldType.equals(LocalDate.class)) {
-                initializeLocalDateField(setter, instance, sourceJson, fieldName);
-            } else {
-                value = getStringValue(sourceJson, fieldName);
-                setter.invoke(instance, value);
-            }
+            String providedJson = getProvidedJson(sourceJson, fieldName);
+            setter.invoke(instance, mapJsonToObject(providedJson, fieldType));
         }
     }
 
-    public void initializeLocalDateField(Method method, Object instance, String json, String fieldName) throws InvocationTargetException, IllegalAccessException {
+    public void initializeLocalDateField(Method method, Object instance, String json, String fieldName)
+            throws InvocationTargetException, IllegalAccessException {
         String[] value = getLocalDateValue(json, fieldName);
 
         LocalDate date = LocalDate.of(Integer.parseInt(value[0]), Integer.parseInt(value[1]), Integer.parseInt(value[2]));
@@ -165,30 +171,34 @@ public class Deserializer extends AbstractMapper implements JsonInitialize {
         setter.invoke(instance, list);
     }
 
-    public void initializeMap(String json, String fieldName, Method setter, Object instance, Class<?> classType)
+    public void initializeMap(Class<?> fieldType, String sourceJson, String fieldName, Method setter, Object instance,
+                              Class<?> classType)
             throws NoSuchFieldException, InvocationTargetException, InstantiationException, IllegalAccessException,
             NoSuchMethodException {
-        Pattern pattern = Pattern.compile("\"" + fieldName + "\":(\\{\\\".+?\\\":\\{.+?\\}\\})");
-        Matcher matcher = pattern.matcher(json);
-        matcher.find();
-        String jsonForMap = matcher.group(1);
+        if (isMap(fieldType)) {
+            Pattern pattern = Pattern.compile("\"" + fieldName + "\":(\\{\\\".+?\\\":\\{.+?\\}\\})");
+            Matcher matcher = pattern.matcher(sourceJson);
+            matcher.find();
+            String jsonForMap = matcher.group(1);
 
-        ParameterizedType genericType = (ParameterizedType) classType.getDeclaredField(fieldName).getGenericType();
-        List<Type> mapKeyValueTypes = Arrays.stream(genericType.getActualTypeArguments()).toList();
+            ParameterizedType genericType = (ParameterizedType) classType.getDeclaredField(fieldName).getGenericType();
+            List<Type> mapKeyValueTypes = Arrays.stream(genericType.getActualTypeArguments()).toList();
 
-        Class<?> mapKeyType = (Class<?>) mapKeyValueTypes.get(0);
-        Class<?> mapValueType = (Class<?>) mapKeyValueTypes.get(1);
+            Class<?> mapKeyType = (Class<?>) mapKeyValueTypes.get(0);
+            Class<?> mapValueType = (Class<?>) mapKeyValueTypes.get(1);
 
-        Map<Object, Object> mapForInstance = new HashMap<>();
-        Map<String, String> keysValues = parseKeyAndValueForMapInObject(jsonForMap);
+            Map<Object, Object> mapForInstance = new HashMap<>();
+            Map<String, String> keysValues = parseKeyAndValueForMapInObject(jsonForMap);
 
-        for (Map.Entry<String, String> item : keysValues.entrySet()) {
-            Object key = mapJsonToObject(item.getKey(), mapKeyType);
-            Object value = mapJsonToObject(item.getValue(), mapValueType);
-            mapForInstance.put(key, value);
+            for (Map.Entry<String, String> item : keysValues.entrySet()) {
+                Object key = mapJsonToObject(item.getKey(), mapKeyType);
+                Object value = mapJsonToObject(item.getValue(), mapValueType);
+                mapForInstance.put(key, value);
+            }
+            setter.invoke(instance, mapForInstance);
+        } else {
+            initializeIntegratedClassObject(fieldType, sourceJson, fieldName, instance, setter);
         }
-
-        setter.invoke(instance, mapForInstance);
     }
 
 

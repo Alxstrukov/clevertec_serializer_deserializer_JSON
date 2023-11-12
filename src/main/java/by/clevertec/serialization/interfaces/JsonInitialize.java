@@ -10,12 +10,15 @@ public interface JsonInitialize {
                                       Method setter)
             throws InvocationTargetException, IllegalAccessException;
 
-    void initializeCollection(String sourceJson, String fieldName, Object instance,
-                              Method setter);
+    void initializeCollection(Class<?> fieldType, String sourceJson, String fieldName, Object instance,
+                              Method setter, Class<?> classType)
+            throws NoSuchFieldException, InvocationTargetException, InstantiationException,
+            IllegalAccessException, NoSuchMethodException;
 
     void initializeIntegratedClassObject(Class<?> fieldType, String sourceJson, String fieldName, Object instance,
 
-                                         Method setter) throws InvocationTargetException, IllegalAccessException;
+                                         Method setter) throws InvocationTargetException, IllegalAccessException,
+            NoSuchFieldException, InstantiationException, NoSuchMethodException;
 
     void initializeLocalDateField(Method method, Object instance, String json, String fieldName)
             throws InvocationTargetException, IllegalAccessException;
@@ -24,7 +27,7 @@ public interface JsonInitialize {
                                         Object instance, Class<?> parameter)
             throws InvocationTargetException, IllegalAccessException;
 
-    void initializeMap(String json, String fieldName, Method setter, Object instance, Class<?> classType)
+    void initializeMap(Class<?> fieldType, String json, String fieldName, Method setter, Object instance, Class<?> classType)
             throws NoSuchFieldException, InvocationTargetException, InstantiationException, IllegalAccessException,
             NoSuchMethodException;
 
